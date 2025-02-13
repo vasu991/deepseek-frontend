@@ -1,16 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { MessageSquare, Send, LogOut, Clock } from 'lucide-react';
-import { useAuthStore } from '../store/authStore';
-import { Message, Session } from '../types/chat';
-import { createSession, fetchSessions, fetchSessionMessages } from '../services/api';
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useAuthStore } from "../store/authStore";
+import { Message, Session } from "../types/chat";
+import {
+  createSession,
+  fetchSessions,
+  fetchSessionMessages,
+  sendChatMessage,
+  updateSessionName,
+} from "../services/api";
+import { ChatSidebar } from "../components/chat/ChatSidebar";
+import { ChatHeader } from "../components/chat/ChatHeader";
+import { MessageList } from "../components/chat/MessageList";
+import { MessageInput } from "../components/chat/MessageInput";
 
 export function Chat() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const sessions = useAuthStore((state) => state.sessions);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const user = useAuthStore((state) => state.user);
@@ -30,10 +39,13 @@ export function Chat() {
 
         if (!storedSessions || storedSessions.length === 0) {
           // If Zustand has no sessions, check localStorage
-          storedSessions = JSON.parse(localStorage.getItem('sessions') || '[]');
+          storedSessions = JSON.parse(localStorage.getItem("sessions") || "[]");
           if (storedSessions.length > 0) {
             useAuthStore.getState().setSessions(storedSessions);
-            console.log("Loaded stored sessions from localStorage:", storedSessions);
+            console.log(
+              "Loaded stored sessions from localStorage:",
+              storedSessions
+            );
           }
         }
 
@@ -53,17 +65,15 @@ export function Chat() {
     loadSessions();
   }, [token, user]);
 
-
-
   // Fetch messages for current session
   useEffect(() => {
     async function loadMessages() {
       if (!token || !sessionId) {
         setMessages([
           {
-            id: '1',
-            role: 'assistant',
-            content: `Hello ${user?.username}! How can I help you today?`
+            id: "1",
+            role: "assistant",
+            content: `Hello ${user?.username}! How can I help you today?`,
           },
         ]);
         return;
@@ -74,7 +84,7 @@ export function Chat() {
         const sessionMessages = await fetchSessionMessages(token, sessionId);
         setMessages(sessionMessages);
       } catch (error) {
-        console.error('Failed to fetch messages:', error);
+        console.error("Failed to fetch messages:", error);
       } finally {
         setIsFetching(false);
       }
@@ -84,7 +94,7 @@ export function Chat() {
 
   const formatDate = (isoString: string) => {
     const date = new Date(isoString);
-    return date.toLocaleString(); // Adjust format based on locale
+    return date.toLocaleString();
   };
 
   const handleNewChat = async () => {
@@ -105,7 +115,6 @@ export function Chat() {
 
       console.log("New session created:", session);
 
-
       useAuthStore.getState().addSession(session); // Store in Zustand
       console.log("Session added to store:", session);
 
@@ -118,183 +127,87 @@ export function Chat() {
     }
   };
 
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !sessionId || !token) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      role: 'user',
-      content: input
+      role: "user",
+      content: input,
     };
 
     // Add user message to UI
     setMessages((prev) => [...prev, userMessage]);
-    setInput('');
+    setInput("");
 
     try {
-      // Send message to backend
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          sessionId,
-          prompt: input
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to get response from bot');
-      }
-
-      const data = await response.json();
-
-      const botMessage: Message = {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: data.response
-      };
-
-      // Add bot message to UI
+      const botMessage = await sendChatMessage(token, sessionId, input);
       setMessages((prev) => [...prev, botMessage]);
+
+      // Check if session name needs updating
+      const sessionIndex = sessions.findIndex((s) => s.sessionId === sessionId);
+
+      if (sessionIndex !== -1 && !sessions[sessionIndex].sessionName) {
+        const newSessionName = input.substring(0, 30);
+
+        // ✅ Update session name in DB & get updated session
+        const updatedSession = await updateSessionName(token, sessionId, newSessionName);
+
+        if (updatedSession) {
+          // ✅ Update session name in Zustand state
+          const updatedSessions = [...sessions];
+          updatedSessions[sessionIndex] = updatedSession;
+          useAuthStore.getState().setSessions(updatedSessions);
+
+          // ✅ Navigate to force re-render
+          setTimeout(() => {
+            navigate(`/chat/${sessionId}`);
+          }, 100);
+        }
+      }
     } catch (error) {
-      console.error('Error fetching bot response:', error);
+      console.error("Error fetching bot response:", error);
     }
   };
 
   const formatSessionTitle = (session: Session) => {
-    if (!session) return 'New Chat';
-    return `${session.sessionName || 'Untitled Chat'} - ${formatDate(session.createdAt)}`;
+    if (!session) return "New Chat";
+    return `${session.sessionName || "Untitled Chat"} - ${formatDate(
+      session.createdAt
+    )}`;
   };
 
   return (
     <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r flex flex-col">
-        <div className="p-4 border-b">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Chat Sessions</h2>
-            <button
-              onClick={() => logout()}
-              className="text-gray-500 hover:text-gray-700"
-              title="Logout"
-            >
-              <LogOut className="h-5 w-5" />
-            </button>
-          </div>
-          <button
-            onClick={handleNewChat}
-            disabled={isLoading}
-            className={`w-full flex items-center p-2 mb-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 ${
-              isLoading ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            <MessageSquare className="h-5 w-5 mr-2" />
-            {isLoading ? 'Creating...' : 'New Chat'}
-          </button>
-        </div>
+      <ChatSidebar
+        sessions={sessions}
+        sessionId={sessionId}
+        isLoading={isLoading}
+        isFetching={isFetching}
+        handleNewChat={handleNewChat}
+        logout={logout}
+        formatSessionTitle={formatSessionTitle}
+        formatDate={formatDate}
+      />
 
-        <div className="flex-1 overflow-y-auto">
-          {isFetching ? (
-            <div className="flex items-center justify-center h-32 text-gray-500">
-              <Clock className="h-5 w-5 animate-spin mr-2" />
-              Loading sessions...
-            </div>
-          ) : sessions.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">
-              No chat sessions yet
-            </div>
-          ) : (
-            <div className="p-2 space-y-1">
-              {sessions.map((session) => (
-                <Link
-                  key={session.sessionId}
-                  to={`/chat/${session.sessionId}`}
-                  className={`block p-3 rounded-lg transition-colors ${
-                    sessionId === session.sessionId ? 'bg-indigo-50 text-indigo-600' : 'hover:bg-gray-50 text-gray-700'
-                  }`}
-                >
-                  <div className="flex items-start">
-                    <MessageSquare className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{formatSessionTitle(session).split('-')[0]}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {session.createdAt ? formatDate(session.createdAt) : 'No Date'}
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        {/* Chat Header */}
-        <div className="bg-white p-4 shadow">
-          <h1 className="text-xl font-semibold">
-            {sessionId ? formatSessionTitle(sessions.find(s => s.sessionId === sessionId) || { sessionId: '', sessionName: 'Untitled Chat', messages: [], createdAt: '' }) : 'New Chat'}
-          </h1>
-          <p className="text-sm text-gray-500">
-            Logged in as {user?.username} ({user?.role})
-          </p>
-        </div>
+        {user && (
+          <ChatHeader
+            sessionId={sessionId}
+            sessions={sessions}
+            user={user}
+            formatSessionTitle={formatSessionTitle}
+          />
+        )}
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {isFetching ? (
-            <div className="flex items-center justify-center h-32 text-gray-500">
-              <Clock className="h-5 w-5 animate-spin mr-2" />
-              Loading messages...
-            </div>
-          ) : (
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-xl p-4 rounded-lg ${
-                    message.role === 'user'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-white text-gray-800'
-                  }`}
-                >
-                  <p>{message.content}</p>
-                  <span className="text-xs opacity-75 mt-1 block">
-                    {message.role === 'user' ? 'You' : 'Assistant'}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        <MessageList messages={messages} isFetching={isFetching} />
 
-        {/* Input Area */}
-        <div className="bg-white border-t p-4">
-          <form onSubmit={handleSubmit} className="flex space-x-4">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-              <Send className="h-5 w-5" />
-            </button>
-          </form>
-        </div>
+        <MessageInput
+          input={input}
+          setInput={setInput}
+          handleSubmit={handleSubmit}
+        />
       </div>
     </div>
   );
