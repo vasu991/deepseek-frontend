@@ -13,6 +13,7 @@ interface ChatSidebarProps {
   logout: () => void;
   formatSessionTitle: (session: Session) => string;
   formatDate: (isoString: string) => string;
+  animatedSessions: string[]; // New prop to track which sessions should animate
 }
 
 export const ChatSidebar: React.FC<ChatSidebarProps> = ({
@@ -24,6 +25,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   logout,
   formatSessionTitle,
   formatDate,
+  animatedSessions, // Destructure the new prop
 }) => {
   const [animatedSessionNames, setAnimatedSessionNames] = useState<Record<string, string>>({});
 
@@ -87,14 +89,18 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                   <MessageSquare className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">
-                      <TypeAnimation
-                        key={session.sessionId + animatedSessionNames[session.sessionId]}
-                        sequence={[animatedSessionNames[session.sessionId] || '', 1000]}
-                        speed={10}
-                        wrapper="span"
-                        repeat={0}
-                        cursor={false}
-                      />
+                      {animatedSessions.includes(session.sessionId) ? (
+                        <TypeAnimation
+                          key={session.sessionId + animatedSessionNames[session.sessionId]}
+                          sequence={[animatedSessionNames[session.sessionId] || '', 1000]}
+                          speed={10}
+                          wrapper="span"
+                          repeat={0}
+                          cursor={false}
+                        />
+                      ) : (
+                        animatedSessionNames[session.sessionId] || ''
+                      )}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
                       {session.createdAt ? formatDate(session.createdAt) : 'No Date'}

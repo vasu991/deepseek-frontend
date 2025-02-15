@@ -22,6 +22,7 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
+  const [animatedSessions, setAnimatedSessions] = useState<string[]>([]); // Track sessions being animated
   const user = useAuthStore((state) => state.user);
   const token = useAuthStore((state) => state.token);
   const logout = useAuthStore((state) => state.logout);
@@ -160,6 +161,14 @@ export function Chat() {
           updatedSessions[sessionIndex] = updatedSession;
           useAuthStore.getState().setSessions(updatedSessions);
 
+          // Add the session to the animatedSessions list
+          setAnimatedSessions((prev) => [...prev, sessionId]);
+
+          // Remove the session from the animatedSessions list after 2 seconds (animation duration)
+          setTimeout(() => {
+            setAnimatedSessions((prev) => prev.filter((id) => id !== sessionId));
+          }, 2000);
+
           // ✅ Navigate to force re-render
           setTimeout(() => {
             navigate(`/chat/${sessionId}`);
@@ -189,6 +198,7 @@ export function Chat() {
         logout={logout}
         formatSessionTitle={formatSessionTitle}
         formatDate={formatDate}
+        animatedSessions={animatedSessions} // Pass the list of animated sessions
       />
 
       <div className="flex-1 flex flex-col">
@@ -198,6 +208,7 @@ export function Chat() {
             sessions={sessions}
             user={user}
             formatSessionTitle={formatSessionTitle}
+            shouldAnimate={animatedSessions.includes(sessionId || "")} // Pass whether the current session should animate
           />
         )}
 
