@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { v4 } from "uuid";
 import { useAuthStore } from "../store/authStore";
 import { Message, Session } from "../types/chat";
 import {
   createSession,
   fetchSessions,
   fetchSessionMessages,
-  sendChatMessage,
+  // sendChatMessage,
+  sendChatStreamMessage,
   updateSessionName,
 } from "../services/api";
 import { ChatSidebar } from "../components/chat/ChatSidebar";
@@ -128,12 +130,64 @@ export function Chat() {
     }
   };
 
+  // const handleSubmit = async (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   if (!input.trim() || !sessionId || !token) return;
+
+  //   const userMessage: Message = {
+  //     id: Date.now().toString(),
+  //     role: "user",
+  //     content: input,
+  //   };
+
+  //   // Add user message to UI
+  //   setMessages((prev) => [...prev, userMessage]);
+  //   setInput("");
+
+  //   try {
+  //     const botMessage = await sendChatMessage(token, sessionId, input);
+  //     setMessages((prev) => [...prev, botMessage]);
+
+  //     // Check if session name needs updating
+  //     const sessionIndex = sessions.findIndex((s) => s.sessionId === sessionId);
+
+  //     if (sessionIndex !== -1 && !sessions[sessionIndex].sessionName) {
+  //       const newSessionName = input.substring(0, 30);
+
+  //       // ✅ Update session name in DB & get updated session
+  //       const updatedSession = await updateSessionName(token, sessionId, newSessionName);
+
+  //       if (updatedSession) {
+  //         // ✅ Update session name in Zustand state
+  //         const updatedSessions = [...sessions];
+  //         updatedSessions[sessionIndex] = updatedSession;
+  //         useAuthStore.getState().setSessions(updatedSessions);
+
+  //         // Add the session to the animatedSessions list
+  //         setAnimatedSessions((prev) => [...prev, sessionId]);
+
+  //         // Remove the session from the animatedSessions list after 2 seconds (animation duration)
+  //         setTimeout(() => {
+  //           setAnimatedSessions((prev) => prev.filter((id) => id !== sessionId));
+  //         }, 2000);
+
+  //         // ✅ Navigate to force re-render
+  //         setTimeout(() => {
+  //           navigate(`/chat/${sessionId}`);
+  //         }, 100);
+  //       }
+  //     }
+  //   } catch (error) {
+  //     console.error("Error fetching bot response:", error);
+  //   }
+  // };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !sessionId || !token) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: v4(),
       role: "user",
       content: input,
     };
@@ -143,8 +197,26 @@ export function Chat() {
     setInput("");
 
     try {
-      const botMessage = await sendChatMessage(token, sessionId, input);
+      let botMessageContent = '';
+      const botMessage: Message = {
+        id: v4(),
+        role: "assistant",
+        content: '',
+      };
+
+      // Add an empty assistant message to the UI
       setMessages((prev) => [...prev, botMessage]);
+
+      await sendChatStreamMessage(token, sessionId, input, (content) => {
+        botMessageContent = content;
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage.role === 'assistant') {
+            lastMessage.content = botMessageContent;
+          }
+          return [...prev]; // Update messages state
+        });
+      });
 
       // Check if session name needs updating
       const sessionIndex = sessions.findIndex((s) => s.sessionId === sessionId);

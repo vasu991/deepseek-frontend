@@ -1,5 +1,6 @@
 import axios from "axios";
 import { Session, Message } from "../types/chat";
+// import { v4 } from "uuid";
 import { User } from "../types/auth";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
@@ -56,33 +57,62 @@ export async function fetchSessionMessages(
 }
 
 // Function to send a chat message
-export async function sendChatMessage(
+export async function sendChatStreamMessage(
   token: string,
   sessionId: string,
-  prompt: string
-): Promise<Message> {
+  prompt: string,
+  onData: (content: string) => void
+): Promise<void> {
   try {
-    const response = await axios.post(
-      `${import.meta.env.VITE_API_BASE_URL}/api/chat`,
+    const response = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/api/chat/stream`,
       {
-        sessionId,
-        prompt,
-      },
-      config(token)
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sessionId, prompt }),
+      }
     );
 
-    // console.log("Chat message sent:", response.data);
+    if (!response.body) {
+      throw new Error("No response body");
+    }
 
-    // Return the bot's response as a Message object
-    return {
-      id: Date.now().toString(),
-      role: "assistant",
-      content: response.data.response,
-    };
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    let botMessageContent = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+
+      // Clean the data by removing "data:" and decoding escaped characters
+      let cleanedData = chunk.replace(/data: /g, '').trim();
+      cleanedData = cleanedData.replace(/\\u[0-9a-fA-F]{4}/g, (match) =>
+        String.fromCharCode(parseInt(match.replace('\\u', ''), 16))
+      ); // Decode Unicode escape sequences
+
+      // Remove \n or replace with a space, if necessary
+      cleanedData = cleanedData.replace(/\\n/g, ' '); // Replace \n with space or ''
+
+      // Append cleaned data directly (no extra space)
+      botMessageContent += cleanedData;
+      botMessageContent += " ";
+
+
+      // Update UI with new data
+      onData(botMessageContent);
+    }
   } catch (error) {
     handleError(error as AxiosError, "Failed to send chat message");
   }
 }
+
+
 
 export async function updateSessionName(
   token: string,
@@ -95,7 +125,7 @@ export async function updateSessionName(
       { sessionName },
       config(token)
     );
-    console.log("Session name updated:", response.data.session);
+    // console.log("Session name updated:", response.data.session);
     return response.data.session;
   } catch (error) {
     handleError(error as AxiosError, "Failed to update session name");
